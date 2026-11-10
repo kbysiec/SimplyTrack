@@ -5,6 +5,7 @@ xcuserdata/
 build/
 DerivedData/
 .derived-data-log-*
+.build_derived_data/
 
 # macOS system files
 .DS_Store
@@ -12,3 +13,4 @@ DerivedData/
 # Claude Code
 .claude/
 .history/
+
