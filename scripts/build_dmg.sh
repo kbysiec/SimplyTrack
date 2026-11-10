@@ -98,6 +98,10 @@ if [ "$SKIP_BUILD" = false ]; then
     rm -rf "$BUILD_DIR/SimplyTrack.app"
     cp -R "$BUILT_APP" "$BUILD_DIR/SimplyTrack.app"
     APP_PATH="$BUILD_DIR/SimplyTrack.app"
+
+    # Always ensure valid ad-hoc code-signature for local builds so UNUserNotificationCenter works
+    echo "==> Applying ad-hoc code-signature to app bundle..."
+    codesign --force --deep -s - "$APP_PATH"
 else
     # Find existing app in build/
     if [ -d "$BUILD_DIR/SimplyTrack.app" ]; then
@@ -111,6 +115,12 @@ else
         exit 1
     fi
     echo "==> Using existing app bundle: $APP_PATH"
+
+    # Ensure valid ad-hoc signature if unsigned
+    if ! codesign -v "$APP_PATH" 2>/dev/null; then
+        echo "==> Fixing ad-hoc code-signature on existing bundle..."
+        codesign --force --deep -s - "$APP_PATH"
+    fi
 fi
 
 # 3. Read application version from Info.plist
