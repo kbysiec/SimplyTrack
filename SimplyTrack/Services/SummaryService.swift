@@ -131,3 +131,4 @@ final class OpenAISummaryProvider: SummaryProvider, @unchecked Sendable {
         return cleanedSummary
     }
 }
+
