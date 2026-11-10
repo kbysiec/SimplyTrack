@@ -250,6 +250,13 @@ struct ContentView: View {
             // Without this, the 30-second cache window causes stale/empty graphs.
             invalidateCacheForToday()
             refreshCachedValues()
+            appDelegate.refreshNotificationPermissions()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            appDelegate.refreshNotificationPermissions()
+        }
+        .onAppear {
+            appDelegate.refreshNotificationPermissions()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PopoverDidClose"))) { _ in
             isPopoverVisible = false

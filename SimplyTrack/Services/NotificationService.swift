@@ -58,11 +58,13 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         Task {
             do {
                 let granted = try await center.requestAuthorization(options: [.alert, .sound])
-                if !granted {
-                    appDelegate?.notificationPermissionDenied = true
+                await MainActor.run {
+                    self.appDelegate?.notificationPermissionDenied = !granted
                 }
             } catch {
-                appDelegate?.notificationPermissionDenied = true
+                await MainActor.run {
+                    self.appDelegate?.notificationPermissionDenied = true
+                }
             }
         }
 
@@ -74,6 +76,18 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         )
 
         center.setNotificationCategories([updateCategory])
+    }
+
+    /// Queries the current notification authorization status from UNUserNotificationCenter
+    /// and synchronizes the app delegate state so UI banners disappear when permissions are enabled.
+    func refreshNotificationPermissionStatus() {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { [weak self] settings in
+            Task { @MainActor in
+                let isDenied = settings.authorizationStatus == .denied
+                self?.appDelegate?.notificationPermissionDenied = isDenied
+            }
+        }
     }
 
     /// Starts the notification scheduler that checks for daily summary notifications.

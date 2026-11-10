@@ -160,7 +160,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// Toggles the main popover visibility.
     /// Must be called on main actor since it modifies UI state.
     @MainActor func togglePopover() {
+        notificationService?.refreshNotificationPermissionStatus()
         menuBarManager?.togglePopover()
+    }
+
+    /// Explicitly refreshes the notification permission state.
+    @MainActor func refreshNotificationPermissions() {
+        notificationService?.refreshNotificationPermissionStatus()
     }
 
     /// Triggers a test summary notification for the currently selected date.
