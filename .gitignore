@@ -11,3 +11,4 @@ DerivedData/
 
 # Claude Code
 .claude/
+.history/

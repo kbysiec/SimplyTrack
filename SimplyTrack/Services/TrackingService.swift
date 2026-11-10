@@ -9,6 +9,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import SwiftData
+import SwiftUI
 import os
 
 /// Core service responsible for tracking app and website usage patterns.
@@ -16,9 +17,6 @@ import os
 /// handles idle detection, and manages active usage sessions.
 @MainActor
 class TrackingService {
-
-    /// Interval for persisting usage data to database and cache expiry
-    static let dataPersistenceInterval: TimeInterval = 30.0
 
     /// Bundle identifiers of system UI that should be excluded from tracking.
     private static let excludedBundleIds: Set<String> = [
@@ -31,6 +29,20 @@ class TrackingService {
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "TrackingService")
 
+    /// Default interval for persisting usage data to database and cache expiry (fallback / default constant)
+    static let dataPersistenceInterval: TimeInterval = AppStorageDefaults.dataPersistenceInterval
+
+    // MARK: - Configurable Intervals
+
+    @AppStorage("trackingInterval", store: .app) private var trackingInterval = AppStorageDefaults.trackingInterval
+    @AppStorage("dataPersistenceInterval", store: .app) private var dataPersistenceInterval = AppStorageDefaults.dataPersistenceInterval
+    @AppStorage("idleThreshold", store: .app) private var idleThreshold = AppStorageDefaults.idleThreshold
+
+    /// Tracks the currently active tracking interval so timers can be restarted on change.
+    private var activeTrackingInterval: TimeInterval?
+    /// Tracks the currently active persistence interval so timers can be restarted on change.
+    private var activePersistenceInterval: TimeInterval?
+
     // MARK: - Dependencies
 
     private let modelContainer: ModelContainer
@@ -42,6 +54,11 @@ class TrackingService {
 
     private var isTracking = false
     private var currentApp: NSRunningApplication?
+
+    // MARK: - Timers
+
+    private var activityTimer: Timer?
+    private var persistenceTimer: Timer?
 
     // MARK: - Active Sessions
 
@@ -72,7 +89,6 @@ class TrackingService {
     // MARK: - Idle Detection
 
     private var lastActivityTime = Date()
-    private let idleThreshold: TimeInterval = 300
 
     /// Initializes the tracking service with required dependencies.
     /// - Parameters:
@@ -105,18 +121,55 @@ class TrackingService {
             }
         }
 
-        // Update activity every second to ensure accurate tracking
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+        startTimers()
+    }
+
+    // MARK: - Timer Management
+
+    /// Starts or restarts the activity polling and persistence timers
+    /// using the current configurable interval values from settings.
+    private func startTimers() {
+        let currentTrackingInterval = trackingInterval
+        let currentPersistenceInterval = dataPersistenceInterval
+
+        // Only restart if intervals actually changed
+        if activeTrackingInterval == currentTrackingInterval && activePersistenceInterval == currentPersistenceInterval {
+            return
+        }
+
+        // Invalidate existing timers
+        activityTimer?.invalidate()
+        persistenceTimer?.invalidate()
+
+        activeTrackingInterval = currentTrackingInterval
+        activePersistenceInterval = currentPersistenceInterval
+
+        logger.info("Configuring timers: tracking=\(currentTrackingInterval)s, persistence=\(currentPersistenceInterval)s, idle=\(self.idleThreshold)s")
+
+        // Update activity at the configured interval to ensure accurate tracking
+        activityTimer = Timer.scheduledTimer(withTimeInterval: currentTrackingInterval, repeats: true) { _ in
             Task { @MainActor in
                 await self.updateCurrentActivity()
             }
         }
 
-        // Save sessions every 30 seconds for data safety
-        Timer.scheduledTimer(withTimeInterval: Self.dataPersistenceInterval, repeats: true) { _ in
+        // Save sessions at the configured interval for data safety
+        persistenceTimer = Timer.scheduledTimer(withTimeInterval: currentPersistenceInterval, repeats: true) { _ in
             Task { @MainActor in
                 await self.sessionPersistenceService.performAtomicSave()
             }
+        }
+    }
+
+    /// Checks if the configured intervals have changed and restarts timers if needed.
+    /// Called periodically from the activity update loop to pick up settings changes.
+    private func checkForIntervalChanges() {
+        let currentTrackingInterval = trackingInterval
+        let currentPersistenceInterval = dataPersistenceInterval
+
+        if activeTrackingInterval != currentTrackingInterval || activePersistenceInterval != currentPersistenceInterval {
+            logger.info("Tracking intervals changed, restarting timers")
+            startTimers()
         }
     }
 
@@ -130,6 +183,9 @@ class TrackingService {
     }
 
     private func updateCurrentActivity() async {
+        // Check if user changed interval settings and restart timers if needed
+        checkForIntervalChanges()
+
         let now = Date()
         let systemIdleTime = getSystemIdleTime()
 

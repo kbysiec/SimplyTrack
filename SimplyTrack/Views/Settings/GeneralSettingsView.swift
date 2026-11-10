@@ -14,6 +14,9 @@ struct GeneralSettingsView: View {
     @StateObject private var loginItemManager = LoginItemManager.shared
     @State private var launchAtLoginEnabled = false
     @AppStorage("updateFrequency", store: .app) private var updateFrequency: UpdateFrequency = .daily
+    @AppStorage("trackingInterval", store: .app) private var trackingInterval: Double = AppStorageDefaults.trackingInterval
+    @AppStorage("dataPersistenceInterval", store: .app) private var dataPersistenceInterval: Double = AppStorageDefaults.dataPersistenceInterval
+    @AppStorage("idleThreshold", store: .app) private var idleThreshold: Double = AppStorageDefaults.idleThreshold
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -60,6 +63,77 @@ struct GeneralSettingsView: View {
                     Text("How often SimplyTrack should check for new versions")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+
+                Section("Tracking & Performance") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Image(systemName: "gauge.with.needle")
+                                .foregroundColor(.orange)
+                                .frame(width: 16)
+                            Text("Activity refresh rate")
+
+                            Spacer()
+
+                            Picker("", selection: $trackingInterval) {
+                                ForEach(TrackingInterval.allCases) { interval in
+                                    Text(interval.label).tag(interval.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 200)
+                        }
+
+                        Text("How often SimplyTrack polls the frontmost application and website")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Image(systemName: "internaldrive")
+                                .foregroundColor(.purple)
+                                .frame(width: 16)
+                            Text("Data save interval")
+
+                            Spacer()
+
+                            Picker("", selection: $dataPersistenceInterval) {
+                                ForEach(PersistenceInterval.allCases) { interval in
+                                    Text(interval.label).tag(interval.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 200)
+                        }
+
+                        Text("How often tracked activity sessions are persisted to the database")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Image(systemName: "moon.zzz")
+                                .foregroundColor(.indigo)
+                                .frame(width: 16)
+                            Text("Idle detection threshold")
+
+                            Spacer()
+
+                            Picker("", selection: $idleThreshold) {
+                                ForEach(IdleThreshold.allCases) { threshold in
+                                    Text(threshold.label).tag(threshold.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 200)
+                        }
+
+                        Text("Inactive time before active tracking sessions are ended")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             .formStyle(.grouped)
