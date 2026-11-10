@@ -47,6 +47,11 @@ struct AppStorageDefaults {
     /// Default idle detection threshold in seconds.
     /// After this many seconds of inactivity, all active sessions are ended.
     static let idleThreshold: Double = 300.0
+
+    // MARK: - AI Summarization Engine
+
+    /// Default AI engine preference.
+    static let aiSummaryEngine: AISummaryEngine = .automatic
 }
 
 /// Available tracking interval options for the polling timer.

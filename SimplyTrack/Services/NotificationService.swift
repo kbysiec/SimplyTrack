@@ -27,6 +27,7 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - Settings
 
     @AppStorage("summaryNotificationsEnabled", store: .app) private var summaryNotificationsEnabled = false
+    @AppStorage("aiSummaryEngine", store: .app) private var aiSummaryEngine: AISummaryEngine = AppStorageDefaults.aiSummaryEngine
     @AppStorage("aiEndpoint", store: .app) private var aiEndpoint = ""
     @AppStorage("aiModel", store: .app) private var aiModel = ""
     @AppStorage("aiChatTemplateKwargs", store: .app) private var aiChatTemplateKwargs = ""
@@ -104,9 +105,24 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - Daily Summary Logic
 
+    private var isAIConfigured: Bool {
+        guard summaryNotificationsEnabled && !summaryNotificationPrompt.isEmpty else {
+            return false
+        }
+
+        switch aiSummaryEngine {
+        case .appleIntelligence:
+            return AppleIntelligenceService.isAvailable
+        case .openAICompatible:
+            return !aiEndpoint.isEmpty && !aiModel.isEmpty
+        case .automatic:
+            return AppleIntelligenceService.isAvailable || (!aiEndpoint.isEmpty && !aiModel.isEmpty)
+        }
+    }
+
     private func checkForDailyNotification() async {
         // Validate that all required settings are configured
-        guard summaryNotificationsEnabled && !aiEndpoint.isEmpty && !aiModel.isEmpty && !summaryNotificationPrompt.isEmpty else {
+        guard isAIConfigured else {
             return
         }
 
@@ -183,16 +199,20 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             return (app, website)
         }.value
 
-        // Substitute usage data into the user's prompt template
-        let fullPrompt =
-            summaryNotificationPrompt
-            .replacingOccurrences(of: "{appSummary}", with: appSummary)
-            .replacingOccurrences(of: "{websiteSummary}", with: websiteSummary)
-
         // Retrieve AI service API key from secure keychain storage
-        let apiKey = try KeychainManager.shared.retrieve(key: "aiApiKey") ?? ""
+        let apiKey = (try? KeychainManager.shared.retrieve(key: "aiApiKey")) ?? ""
 
-        let aiSummary = try await generateAISummary(prompt: fullPrompt, apiKey: apiKey)
+        let aiSummary = try await SummaryService.shared.generateSummary(
+            engine: aiSummaryEngine,
+            appSummary: appSummary,
+            websiteSummary: websiteSummary,
+            promptTemplate: summaryNotificationPrompt,
+            apiURL: aiEndpoint,
+            apiKey: apiKey,
+            model: aiModel,
+            chatTemplateKwargs: aiChatTemplateKwargs,
+            reasoningEffort: aiReasoningEffort
+        )
         guard !aiSummary.isEmpty else {
             throw NotificationError.emptySummary
         }

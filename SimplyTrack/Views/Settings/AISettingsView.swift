@@ -14,6 +14,7 @@ struct AISettingsView: View {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "AISettingsView")
     @EnvironmentObject private var appDelegate: AppDelegate
 
+    @AppStorage("aiSummaryEngine", store: .app) private var aiSummaryEngine: AISummaryEngine = AppStorageDefaults.aiSummaryEngine
     @AppStorage("aiEndpoint", store: .app) private var aiEndpoint = ""
     @AppStorage("aiModel", store: .app) private var aiModel = ""
     @AppStorage("aiChatTemplateKwargs", store: .app) private var aiChatTemplateKwargs = ""
@@ -31,16 +32,36 @@ struct AISettingsView: View {
     @AppStorage("summaryNotificationTime", store: .app) private var summaryNotificationTime: Double = AppStorageDefaults.summaryNotificationTime
     @AppStorage("summaryNotificationPrompt", store: .app) private var summaryNotificationPrompt = AppStorageDefaults.summaryNotificationPrompt
 
+    private var isUsingAppleIntelligence: Bool {
+        switch aiSummaryEngine {
+        case .appleIntelligence:
+            return true
+        case .automatic:
+            return AppleIntelligenceService.isAvailable
+        case .openAICompatible:
+            return false
+        }
+    }
+
     private var hasAIConfigurationErrors: Bool {
-        aiEndpoint.isEmpty || aiModel.isEmpty || summaryNotificationPrompt.isEmpty
+        if isUsingAppleIntelligence {
+            return !AppleIntelligenceService.isAvailable || summaryNotificationPrompt.isEmpty
+        }
+        return aiEndpoint.isEmpty || aiModel.isEmpty || summaryNotificationPrompt.isEmpty
     }
 
     private var canTestAIConnection: Bool {
-        !aiEndpoint.isEmpty && !aiModel.isEmpty
+        if isUsingAppleIntelligence {
+            return true
+        }
+        return !aiEndpoint.isEmpty && !aiModel.isEmpty
     }
 
     private var canSendTestNotification: Bool {
-        canTestAIConnection && !summaryNotificationPrompt.isEmpty
+        if isUsingAppleIntelligence {
+            return AppleIntelligenceService.isAvailable && !summaryNotificationPrompt.isEmpty
+        }
+        return canTestAIConnection && !summaryNotificationPrompt.isEmpty
     }
 
     enum TestResult {
@@ -51,79 +72,150 @@ struct AISettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Form {
-                Section("AI Configuration") {
-                    ValidatedTextField(
-                        title: "API Endpoint",
-                        text: $aiEndpoint,
-                        placeholder: "https://api.openai.com/v1/chat/completions",
-                        helpText: "Full URL for AI API chat completions endpoint",
-                        required: summaryNotificationsEnabled,
-                        requiredMessage: "Endpoint is required"
-                    ) {
-                        Image(systemName: "link")
-                            .foregroundColor(.blue)
-                            .frame(width: 16)
-                    }
-
+                Section("AI Summarization Engine") {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .top) {
-                            Image(systemName: "key.fill")
-                                .foregroundColor(.orange)
+                            Image(systemName: "cpu")
+                                .foregroundColor(.cyan)
                                 .frame(width: 16)
-                            SecureField(text: $aiApiKey, prompt: Text("sk-...")) {
-                                Text("API Key")
+                            Text("Engine")
+
+                            Spacer()
+
+                            Picker("", selection: $aiSummaryEngine) {
+                                ForEach(AISummaryEngine.allCases) { engine in
+                                    Text(engine.label).tag(engine)
+                                }
                             }
-                            .onChange(of: aiApiKey) { _, newValue in
-                                saveApiKeyToKeychain(newValue)
-                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 280)
                         }
 
-                        Text("Your API key (optional, stored securely in Keychain)")
+                        Text("Select whether to prioritize on-device Apple Intelligence or a local/cloud OpenAI-compatible endpoint")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
 
-                    ValidatedTextField(
-                        title: "Model",
-                        text: $aiModel,
-                        placeholder: "gpt-4",
-                        helpText: "AI model to use for features",
-                        required: summaryNotificationsEnabled,
-                        requiredMessage: "Model is required"
-                    ) {
-                        Image(systemName: "brain")
-                            .foregroundColor(.purple)
-                            .frame(width: 16)
-                    }
+                    HStack(spacing: 8) {
+                        Image(systemName: AppleIntelligenceService.isAvailable ? "checkmark.seal.fill" : "exclamationmark.triangle")
+                            .foregroundColor(AppleIntelligenceService.isAvailable ? .green : .secondary)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .top) {
-                            Image(systemName: "curlybraces")
-                                .foregroundColor(.indigo)
-                                .frame(width: 16)
-                            TextField(text: $aiChatTemplateKwargs, prompt: Text("{\"enable_thinking\":false}"), axis: .vertical) {
-                                Text("Chat Template Kwargs")
+                        Text("Apple Intelligence Status: \(AppleIntelligenceService.availabilityDescription)")
+                            .font(.caption)
+                            .foregroundColor(AppleIntelligenceService.isAvailable ? .primary : .secondary)
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                Section("AI Configuration") {
+                    if isUsingAppleIntelligence {
+                        HStack(spacing: 8) {
+                            Image(systemName: "apple.logo")
+                                .foregroundColor(.primary)
+                            Text("Apple Intelligence runs completely on-device. No API key, network access, or endpoint URL required.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        HStack(spacing: 8) {
+                            Button("Preset: Local Ollama") {
+                                aiEndpoint = "http://localhost:11434/v1/chat/completions"
+                                if aiModel.isEmpty {
+                                    aiModel = "llama3.2"
+                                }
                             }
-                            .font(.system(.body, design: .monospaced))
-                            .lineLimit(2...5)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button("Preset: OpenAI") {
+                                aiEndpoint = "https://api.openai.com/v1/chat/completions"
+                                if aiModel.isEmpty || aiModel == "llama3.2" {
+                                    aiModel = "gpt-4o-mini"
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
                             Spacer()
                         }
-
-                        Text("Optional JSON object sent as chat_template_kwargs. For Qwen reasoning control, use {\"enable_thinking\":false}.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        .padding(.bottom, 4)
                     }
 
-                    ValidatedTextField(
-                        title: "Reasoning Effort",
-                        text: $aiReasoningEffort,
-                        placeholder: "low",
-                        helpText: "Optional value sent as reasoning_effort for compatible providers, such as low, medium, or high. Leave empty to omit.",
-                        required: false
-                    ) {
-                        Image(systemName: "dial.low")
-                            .foregroundColor(.indigo)
-                            .frame(width: 16)
+                    if !isUsingAppleIntelligence {
+                        ValidatedTextField(
+                            title: "API Endpoint",
+                            text: $aiEndpoint,
+                            placeholder: "https://api.openai.com/v1/chat/completions",
+                            helpText: "Full URL for AI API chat completions endpoint",
+                            required: summaryNotificationsEnabled,
+                            requiredMessage: "Endpoint is required"
+                        ) {
+                            Image(systemName: "link")
+                                .foregroundColor(.blue)
+                                .frame(width: 16)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .top) {
+                                Image(systemName: "key.fill")
+                                    .foregroundColor(.orange)
+                                    .frame(width: 16)
+                                SecureField(text: $aiApiKey, prompt: Text("sk-...")) {
+                                    Text("API Key")
+                                }
+                                .onChange(of: aiApiKey) { _, newValue in
+                                    saveApiKeyToKeychain(newValue)
+                                }
+                            }
+
+                            Text("Your API key (optional for local models, stored securely in Keychain)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        ValidatedTextField(
+                            title: "Model",
+                            text: $aiModel,
+                            placeholder: "gpt-4",
+                            helpText: "AI model to use for features",
+                            required: summaryNotificationsEnabled,
+                            requiredMessage: "Model is required"
+                        ) {
+                            Image(systemName: "brain")
+                                .foregroundColor(.purple)
+                                .frame(width: 16)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .top) {
+                                Image(systemName: "curlybraces")
+                                    .foregroundColor(.indigo)
+                                    .frame(width: 16)
+                                TextField(text: $aiChatTemplateKwargs, prompt: Text("{\"enable_thinking\":false}"), axis: .vertical) {
+                                    Text("Chat Template Kwargs")
+                                }
+                                .font(.system(.body, design: .monospaced))
+                                .lineLimit(2...5)
+                                Spacer()
+                            }
+
+                            Text("Optional JSON object sent as chat_template_kwargs. For Qwen reasoning control, use {\"enable_thinking\":false}.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        ValidatedTextField(
+                            title: "Reasoning Effort",
+                            text: $aiReasoningEffort,
+                            placeholder: "low",
+                            helpText: "Optional value sent as reasoning_effort for compatible providers, such as low, medium, or high. Leave empty to omit.",
+                            required: false
+                        ) {
+                            Image(systemName: "dial.low")
+                                .foregroundColor(.indigo)
+                                .frame(width: 16)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -147,9 +239,12 @@ struct AISettingsView: View {
                             Spacer()
                         }
 
-                        Text("Test API endpoint and model availability. Your AI provider may charge for each token used.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text(
+                            isUsingAppleIntelligence
+                                ? "Test on-device Apple Intelligence system model availability." : "Test API endpoint and model availability. Your AI provider may charge for each token used."
+                        )
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     }
                     .padding(.top, 8)
 
@@ -380,6 +475,26 @@ struct AISettingsView: View {
     private func testConnection() async {
         isTestingConnection = true
         testResult = nil
+
+        if isUsingAppleIntelligence {
+            if AppleIntelligenceService.isAvailable {
+                do {
+                    let service = AppleIntelligenceService()
+                    let result = try await service.generateSummary(
+                        appSummary: "Xcode: 2h 30m, Safari: 1h 15m",
+                        websiteSummary: "github.com: 45m",
+                        customPromptTemplate: "Create a 1-sentence confirmation test summary based on: {appSummary}"
+                    )
+                    testResult = .success("Apple Intelligence is available and working on-device! Sample: \"\(result.prefix(60))...\"")
+                } catch {
+                    testResult = .failure("Apple Intelligence test failed: \(error.localizedDescription)")
+                }
+            } else {
+                testResult = .failure(AppleIntelligenceService.availabilityDescription)
+            }
+            isTestingConnection = false
+            return
+        }
 
         do {
             let openAI = OpenAIService(apiURL: aiEndpoint, apiKey: aiApiKey)
